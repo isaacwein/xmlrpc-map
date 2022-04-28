@@ -25,7 +25,7 @@ type Response struct {
 
 // Value xml-rpc value
 type Value struct {
-	Value interface{} `json:"value,omitempty"`
+	Value interface{} `xml:"value" json:"value,omitempty"`
 }
 
 func (r Value) UnmarshalJSON(data []byte) error {
@@ -53,7 +53,8 @@ func (r *Value) MarshalXML(u *xml.Encoder, start xml.StartElement) (err error) {
 	data := Temp{}
 	data.Value.XMLName.Local = structType
 	data.Value.Value = structValue
-	err = u.EncodeElement(data, start)
+
+	err = u.Encode(data)
 
 	return
 }
@@ -123,6 +124,22 @@ func (r Struct) UnmarshalXML(u *xml.Decoder, start xml.StartElement) (err error)
 // Array xml-rpc array
 type Array []interface{}
 
+func (r Array) MarshalXML(u *xml.Encoder, start xml.StartElement) (err error) {
+	type Temp struct {
+		XMLName xml.Name `xml:"data"`
+		Values  []*Value `xml:"value"`
+	}
+
+	var data Temp
+	data.Values = make([]*Value, len(r))
+	for i, v := range r {
+		data.Values[i] = &Value{v}
+
+	}
+
+	return u.Encode(data)
+
+}
 func (r *Array) UnmarshalXML(u *xml.Decoder, start xml.StartElement) (err error) {
 	type Temp struct {
 		XMLName xml.Name `xml:"array"`

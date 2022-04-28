@@ -11,11 +11,13 @@ import (
 
 var (
 	//go:embed examples
-	reqFile       embed.FS
-	fileReq       = "examples/req.xml"
-	fileResp      = "examples/resp.xml"
-	fileArrayResp = "examples/resp_array.xml"
-	fileFault     = "examples/fault.xml"
+	reqFile          embed.FS
+	fileReq          = "examples/req.xml"
+	fileResp         = "examples/resp.xml"
+	fileArrayResp    = "examples/resp_array.xml"
+	fileFault        = "examples/fault.xml"
+	fileMultiCallReq = "examples/multicall_req.xml"
+	fileMultiCallRes = "examples/multicall_res.xml"
 )
 
 func TestReqDecoder(t *testing.T) {
@@ -122,6 +124,61 @@ func TestRespFault(t *testing.T) {
 
 	t.Logf(ToJsonString(respData))
 
+}
+
+func TestMultiCallReqDecode(t *testing.T) {
+	reqData := Request{}
+	file, _ := reqFile.Open(fileMultiCallReq)
+	err := xml.NewDecoder(file).Decode(&reqData)
+	if err != nil {
+		t.Fatal(err)
+		return
+	}
+	j, _ := json.Marshal(reqData)
+	t.Logf("%s", j)
+
+}
+
+func TestMultiCallReqEncode(t *testing.T) {
+	resData := Request{
+		MethodName: "system.multicall",
+		Data: &Value{
+			Value: Array{
+				Struct{
+					"methodName": "wp.getUsersBlogs1",
+					"params":     Array{"{{ Your Username }}", "{{ Your Password }}"},
+				},
+				Struct{
+					"methodName": "wp.getUsersBlogs2",
+					"params":     Array{Array{"{{ Your Username }}", "{{ Your Password }}"}},
+				},
+				Struct{
+					"methodName": "wp.getUsersBlogs3",
+					"params":     Array{Array{"{{ Your Username }}", "{{ Your Password }}"}},
+				},
+			},
+		},
+	}
+	buf := &bytes.Buffer{}
+	enc := xml.NewEncoder(buf)
+	enc.Indent("\t", "	")
+	err := enc.Encode(&resData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf(buf.String())
+}
+func TestMultiCallResDecode(t *testing.T) {
+
+	reqData := Request{}
+	file, _ := reqFile.Open(fileMultiCallRes)
+	err := xml.NewDecoder(file).Decode(&reqData)
+	if err != nil {
+		t.Fatal(err)
+		return
+	}
+	j, _ := json.Marshal(reqData)
+	t.Logf("%s", j)
 }
 
 func ToJsonString(d interface{}) string {

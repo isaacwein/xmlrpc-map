@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<methodResponse>
+    <params>
+        <param>
+            <value>
+                <array><data>
+                    <value><struct>
+                        <member><name>faultCode</name><value><int>403</int></value></member>
+                        <member><name>faultString</name><value><string>Incorrect username or password.</string></value></member>
+                    </struct></value>
+                    <value><struct>
+                        <member><name>faultCode</name><value><int>403</int></value></member>
+                        <member><name>faultString</name><value><string>Incorrect username or password.</string></value></member>
+                    </struct></value>
+                    <value><struct>
+                        <member><name>faultCode</name><value><int>403</int></value></member>
+                        <member><name>faultString</name><value><string>Incorrect username or password.</string></value></member>
+                    </struct></value>
+                    <value><struct>
+                        <member><name>faultCode</name><value><int>403</int></value></member>
+                        <member><name>faultString</name><value><string>Incorrect username or password.</string></value></member>
+                    </struct></value>
+                </data></array>
+            </value>
+        </param>
+    </params>
+</methodResponse>
