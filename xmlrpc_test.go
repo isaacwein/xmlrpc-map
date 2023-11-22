@@ -35,11 +35,11 @@ func TestReqDecoder(t *testing.T) {
 func TestReqEncoder(t *testing.T) {
 	resData := Request{
 		MethodName: "some-method-name",
-		Data: &Value{
-			Value: Struct{
-				"i_account":  3,
-				"i_account2": 36,
-			},
+		Data: Struct{
+			"i_account":  3,
+			"i_account2": 36,
+			"nil-value":  nil,
+			"i_array":    Array{"a", "b", "c", nil},
 		},
 	}
 	buf := &bytes.Buffer{}
@@ -72,17 +72,16 @@ func TestRespDecoder(t *testing.T) {
 
 func TestRespEncoder(t *testing.T) {
 	resData := Response{
-		Data: &Value{
-			Value: Struct{
-				"i_account_2": 3,
-				"i_account_f": 56,
-				"i_array":     Array{"a", "b", "c"},
-			},
+		Data: map[string]any{
+			"i_account_2": 3,
+			"i_account_f": 56,
+			"i_array":     []any{"a", "b", "c", nil},
+			"nil-value":   nil,
 		},
 	}
 	buf := &bytes.Buffer{}
 	enc := xml.NewEncoder(buf)
-	enc.Indent("\t", "	")
+	//enc.Indent("\t", "	")
 	err := enc.Encode(&resData)
 	if err != nil {
 		t.Fatal(err)
@@ -181,7 +180,7 @@ func TestMultiCallResDecode(t *testing.T) {
 	t.Logf("%s", j)
 }
 
-func ToJsonString(d interface{}) string {
+func ToJsonString(d any) string {
 	res, err := json.Marshal(d)
 	if err != nil {
 		return fmt.Sprintf("error marshal data: %#+v", d)

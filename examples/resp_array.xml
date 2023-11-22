@@ -35,6 +35,12 @@
                                                     <int>1</int>
                                                 </value>
                                             </member>
+                                            <member>
+                                                <name>nil-value</name>
+                                                <value>
+                                                    <nil/>
+                                                </value>
+                                            </member>
                                         </struct>
                                     </value>
                                     <value>

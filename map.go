@@ -13,19 +13,87 @@ import (
 type Request struct {
 	XMLName    struct{} `xml:"methodCall" json:"-"`
 	MethodName string   `xml:"methodName" json:"method_name"`
-	Data       *Value   `xml:"params>param>value" json:"data,omitempty"`
+	Data       any      `xml:"params>param>value" json:"data,omitempty"`
 	Error      *Error   `xml:"fault>value" json:"error,omitempty"`
+}
+
+func (r *Request) MarshalXML(u *xml.Encoder, start xml.StartElement) (err error) {
+	type TempRequest struct {
+		XMLName    struct{} `xml:"methodCall" json:"-"`
+		MethodName string   `xml:"methodName" json:"method_name"`
+		Data       *Value   `xml:"params>param>value" json:"data,omitempty"`
+		Error      *Error   `xml:"fault>value" json:"error,omitempty"`
+	}
+
+	tempValue := &TempRequest{
+		MethodName: r.MethodName,
+		Data:       &Value{Value: r.Data},
+		Error:      r.Error,
+	}
+	return u.Encode(tempValue)
+}
+func (r *Request) UnmarshalXML(u *xml.Decoder, start xml.StartElement) (err error) {
+	type TempRequest struct {
+		XMLName    struct{} `xml:"methodCall" json:"-"`
+		MethodName string   `xml:"methodName" json:"method_name"`
+		Data       *Value   `xml:"params>param>value" json:"data,omitempty"`
+		Error      *Error   `xml:"fault>value" json:"error,omitempty"`
+	}
+	tempValue := &TempRequest{}
+	err = u.DecodeElement(tempValue, &start)
+	if err != nil {
+		return err
+	}
+	r.MethodName = tempValue.MethodName
+	if tempValue.Data != nil && tempValue.Data.Value != nil {
+		r.Data = tempValue.Data.Value
+	}
+
+	r.Error = tempValue.Error
+	return
 }
 
 type Response struct {
 	XMLName struct{} `xml:"methodResponse" json:"-"`
-	Data    *Value   `xml:"params>param>value" json:"data,omitempty"`
+	Data    any      `xml:"params>param>value" json:"data,omitempty"`
 	Error   *Error   `xml:"fault>value" json:"error,omitempty"`
+}
+
+func (r *Response) MarshalXML(u *xml.Encoder, start xml.StartElement) (err error) {
+	type TempResponse struct {
+		XMLName struct{} `xml:"methodResponse" json:"-"`
+		Data    *Value   `xml:"params>param>value" json:"data,omitempty"`
+		Error   *Error   `xml:"fault>value" json:"error,omitempty"`
+	}
+
+	tempValue := &TempResponse{
+		Data:  &Value{Value: r.Data},
+		Error: r.Error,
+	}
+	return u.Encode(tempValue)
+}
+func (r *Response) UnmarshalXML(u *xml.Decoder, start xml.StartElement) (err error) {
+	type TempResponse struct {
+		XMLName struct{} `xml:"methodResponse" json:"-"`
+		Data    *Value   `xml:"params>param>value" json:"data,omitempty"`
+		Error   *Error   `xml:"fault>value" json:"error,omitempty"`
+	}
+	tempValue := &TempResponse{}
+	err = u.DecodeElement(tempValue, &start)
+	if err != nil {
+		return err
+	}
+
+	if tempValue.Data != nil && tempValue.Data.Value != nil {
+		r.Data = tempValue.Data.Value
+	}
+	r.Error = tempValue.Error
+	return
 }
 
 // Value xml-rpc value
 type Value struct {
-	Value interface{} `xml:"value" json:"value,omitempty"`
+	Value any `xml:"value" json:"value,omitempty"`
 }
 
 func (r Value) UnmarshalJSON(data []byte) error {
@@ -42,7 +110,7 @@ func (r *Value) MarshalXML(u *xml.Encoder, start xml.StartElement) (err error) {
 		XMLName struct{} `xml:"value"`
 		Value   struct {
 			XMLName xml.Name
-			Value   interface{} `xml:",innerxml"`
+			Value   any `xml:",innerxml"`
 		} `xml:",any"`
 	}
 
@@ -52,7 +120,9 @@ func (r *Value) MarshalXML(u *xml.Encoder, start xml.StartElement) (err error) {
 	}
 	data := Temp{}
 	data.Value.XMLName.Local = structType
-	data.Value.Value = structValue
+	if structType != "nil" {
+		data.Value.Value = structValue
+	}
 
 	err = u.Encode(data)
 
@@ -78,7 +148,7 @@ func (r *Value) UnmarshalXML(u *xml.Decoder, start xml.StartElement) (err error)
 }
 
 // Struct is xml-rpc struct
-type Struct map[string]interface{}
+type Struct map[string]any
 
 func (r Struct) MarshalXML(u *xml.Encoder, start xml.StartElement) (err error) {
 	type TempStructMember struct {
@@ -87,10 +157,14 @@ func (r Struct) MarshalXML(u *xml.Encoder, start xml.StartElement) (err error) {
 	}
 	var data []*TempStructMember
 	for key, value := range r {
-		data = append(data, &TempStructMember{
-			Name:  key,
-			Value: Value{Value: value},
-		})
+		tm := &TempStructMember{
+			Name: key,
+		}
+		if value != nil {
+			tm.Value.Value = value
+		}
+
+		data = append(data, tm)
 	}
 
 	start.Name.Local = "member"
@@ -122,7 +196,7 @@ func (r Struct) UnmarshalXML(u *xml.Decoder, start xml.StartElement) (err error)
 }
 
 // Array xml-rpc array
-type Array []interface{}
+type Array []any
 
 func (r Array) MarshalXML(u *xml.Encoder, start xml.StartElement) (err error) {
 	type Temp struct {
@@ -163,7 +237,7 @@ func (r *Array) UnmarshalXML(u *xml.Decoder, start xml.StartElement) (err error)
 
 var xmlRpcTime = "2006-01-02T15:04:05-0700"
 
-func UnmarshalType(Type, data string) (res interface{}, err error) {
+func UnmarshalType(Type, data string) (res any, err error) {
 	switch Type {
 	case "int":
 		res, err = strconv.ParseInt(data, 10, 64)
@@ -202,7 +276,7 @@ func UnmarshalType(Type, data string) (res interface{}, err error) {
 	return
 }
 
-func MarshalType(d interface{}) (t string, v interface{}, err error) {
+func MarshalType(d any) (t string, v any, err error) {
 	t = fmt.Sprintf("%T", d)
 	v = fmt.Sprintf("%v", d)
 	switch val := d.(type) {
@@ -220,14 +294,21 @@ func MarshalType(d interface{}) (t string, v interface{}, err error) {
 		v = base64.StdEncoding.EncodeToString(val)
 	case string:
 		t = "string"
-	case Array, []interface{}:
+	case Array:
 		t = "array"
 		v = val
+	case []any:
+		t = "array"
+		v = Array(val)
 	case Struct:
 		t = "struct"
 		v = val
+	case map[string]any:
+		t = "struct"
+		v = Struct(val)
 	case nil:
 		t = "nil"
+		v = val
 	}
 	return
 }

@@ -30,6 +30,12 @@
                         </value>
                     </member>
                     <member>
+                        <name>null-value</name>
+                        <value>
+                            <nil/>
+                        </value>
+                    </member>
+                    <member>
                         <name>target_hosts</name>
                         <value>
                             <array>
