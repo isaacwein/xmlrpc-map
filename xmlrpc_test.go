@@ -21,9 +21,10 @@ var (
 )
 
 func TestReqDecoder(t *testing.T) {
-	reqData := Request{}
+
 	file, _ := reqFile.Open(fileReq)
-	err := xml.NewDecoder(file).Decode(&reqData)
+	// reqData is a pointer to Request struct
+	reqData, err := NewDecoder(file).DecodeRequest()
 	if err != nil {
 		t.Fatal(err)
 		return
@@ -33,19 +34,21 @@ func TestReqDecoder(t *testing.T) {
 }
 
 func TestReqEncoder(t *testing.T) {
-	resData := Request{
-		MethodName: "some-method-name",
-		Data: Struct{
+	resData := Struct{
+		"i_account":  3,
+		"i_account2": 36,
+		"nil-value":  nil,
+		"i_struct": &Struct{
 			"i_account":  3,
-			"i_account2": 36,
-			"nil-value":  nil,
-			"i_array":    Array{"a", "b", "c", nil},
+			"i_struct_2": (*Struct)(nil),
 		},
+		"i_array": Array{"a", "b", "c", nil},
 	}
 	buf := &bytes.Buffer{}
-	enc := xml.NewEncoder(buf)
+
+	enc := NewEncoder(buf)
 	enc.Indent("\t", "	")
-	err := enc.Encode(&resData)
+	err := enc.EncodeRequest("some-method-name", &resData)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,14 +56,13 @@ func TestReqEncoder(t *testing.T) {
 }
 
 func TestRespDecoder(t *testing.T) {
-	respData := Response{}
 
 	file, err := reqFile.Open(fileResp)
 	if err != nil {
 		t.Fatal(err)
 	}
+	respData, err := NewDecoder(file).DecodeResponse()
 
-	err = xml.NewDecoder(file).Decode(&respData)
 	if err != nil {
 		t.Fatal(err)
 		return
@@ -71,18 +73,33 @@ func TestRespDecoder(t *testing.T) {
 }
 
 func TestRespEncoder(t *testing.T) {
-	resData := Response{
-		Data: map[string]any{
-			"i_account_2": 3,
-			"i_account_f": 56,
-			"i_array":     []any{"a", "b", "c", nil},
-			"nil-value":   nil,
-		},
+	resData := map[string]any{
+		"i_account_2": 3,
+		"i_account_f": 56,
+		"i_array":     []any{"a", "b", "c", nil},
+		"nil-value":   nil,
 	}
+
 	buf := &bytes.Buffer{}
-	enc := xml.NewEncoder(buf)
+	enc := NewEncoder(buf)
 	//enc.Indent("\t", "	")
-	err := enc.Encode(&resData)
+	err := enc.EncodeResponse(resData, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf(buf.String())
+}
+
+func TestRespErrorEncoder(t *testing.T) {
+	resData := Error{
+		FaultCode:   1,
+		FaultString: "some error",
+	}
+
+	buf := &bytes.Buffer{}
+	enc := NewEncoder(buf)
+	enc.Indent("\t", "	")
+	err := enc.EncodeResponse(nil, &resData)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,14 +107,13 @@ func TestRespEncoder(t *testing.T) {
 }
 
 func TestRespArrayDecoder(t *testing.T) {
-	respData := Response{}
 
 	file, err := reqFile.Open(fileArrayResp)
 	if err != nil {
 		t.Fatal(err)
 	}
+	respData, err := NewDecoder(file).DecodeResponse()
 
-	err = xml.NewDecoder(file).Decode(&respData)
 	if err != nil {
 		t.Fatal(err)
 		return
@@ -108,14 +124,13 @@ func TestRespArrayDecoder(t *testing.T) {
 }
 
 func TestRespFault(t *testing.T) {
-	respData := Response{}
 
 	file, err := reqFile.Open(fileFault)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = xml.NewDecoder(file).Decode(&respData)
+	respData, err := NewDecoder(file).DecodeResponse()
 	if err != nil {
 		t.Fatal(err)
 		return
@@ -141,20 +156,18 @@ func TestMultiCallReqDecode(t *testing.T) {
 func TestMultiCallReqEncode(t *testing.T) {
 	resData := Request{
 		MethodName: "system.multicall",
-		Data: &Value{
-			Value: Array{
-				Struct{
-					"methodName": "wp.getUsersBlogs1",
-					"params":     Array{"{{ Your Username }}", "{{ Your Password }}"},
-				},
-				Struct{
-					"methodName": "wp.getUsersBlogs2",
-					"params":     Array{Array{"{{ Your Username }}", "{{ Your Password }}"}},
-				},
-				Struct{
-					"methodName": "wp.getUsersBlogs3",
-					"params":     Array{Array{"{{ Your Username }}", "{{ Your Password }}"}},
-				},
+		Data: Array{
+			&Struct{
+				"methodName": "wp.getUsersBlogs1",
+				"params":     Array{"{{ Your Username1 }}", "{{ Your Password1 }}"},
+			},
+			Struct{
+				"methodName": "wp.getUsersBlogs2",
+				"params":     Array{Array{"{{ Your Username2 }}", "{{ Your Password2 }}"}},
+			},
+			Struct{
+				"methodName": "wp.getUsersBlogs3",
+				"params":     Array{Array{"{{ Your Username3 }}", "{{ Your Password3 }}"}},
 			},
 		},
 	}
@@ -169,7 +182,7 @@ func TestMultiCallReqEncode(t *testing.T) {
 }
 func TestMultiCallResDecode(t *testing.T) {
 
-	reqData := Request{}
+	reqData := Response{}
 	file, _ := reqFile.Open(fileMultiCallRes)
 	err := xml.NewDecoder(file).Decode(&reqData)
 	if err != nil {

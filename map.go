@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"io"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -14,7 +16,6 @@ type Request struct {
 	XMLName    struct{} `xml:"methodCall" json:"-"`
 	MethodName string   `xml:"methodName" json:"method_name"`
 	Data       any      `xml:"params>param>value" json:"data,omitempty"`
-	Error      *Error   `xml:"fault>value" json:"error,omitempty"`
 }
 
 func (r *Request) MarshalXML(u *xml.Encoder, start xml.StartElement) (err error) {
@@ -22,13 +23,11 @@ func (r *Request) MarshalXML(u *xml.Encoder, start xml.StartElement) (err error)
 		XMLName    struct{} `xml:"methodCall" json:"-"`
 		MethodName string   `xml:"methodName" json:"method_name"`
 		Data       *Value   `xml:"params>param>value" json:"data,omitempty"`
-		Error      *Error   `xml:"fault>value" json:"error,omitempty"`
 	}
 
 	tempValue := &TempRequest{
 		MethodName: r.MethodName,
 		Data:       &Value{Value: r.Data},
-		Error:      r.Error,
 	}
 	return u.Encode(tempValue)
 }
@@ -36,7 +35,7 @@ func (r *Request) UnmarshalXML(u *xml.Decoder, start xml.StartElement) (err erro
 	type TempRequest struct {
 		XMLName    struct{} `xml:"methodCall" json:"-"`
 		MethodName string   `xml:"methodName" json:"method_name"`
-		Data       *Value   `xml:"params>param>value" json:"data,omitempty"`
+		Data       Value    `xml:"params>param>value" json:"data,omitempty"`
 		Error      *Error   `xml:"fault>value" json:"error,omitempty"`
 	}
 	tempValue := &TempRequest{}
@@ -45,11 +44,10 @@ func (r *Request) UnmarshalXML(u *xml.Decoder, start xml.StartElement) (err erro
 		return err
 	}
 	r.MethodName = tempValue.MethodName
-	if tempValue.Data != nil && tempValue.Data.Value != nil {
+	if tempValue.Data.Value != nil {
 		r.Data = tempValue.Data.Value
 	}
 
-	r.Error = tempValue.Error
 	return
 }
 
@@ -66,16 +64,20 @@ func (r *Response) MarshalXML(u *xml.Encoder, start xml.StartElement) (err error
 		Error   *Error   `xml:"fault>value" json:"error,omitempty"`
 	}
 
-	tempValue := &TempResponse{
-		Data:  &Value{Value: r.Data},
-		Error: r.Error,
+	tempValue := &TempResponse{}
+	if r.Error != nil {
+		tempValue.Error = r.Error
 	}
+	if r.Data != nil {
+		tempValue.Data = &Value{Value: r.Data}
+	}
+
 	return u.Encode(tempValue)
 }
 func (r *Response) UnmarshalXML(u *xml.Decoder, start xml.StartElement) (err error) {
 	type TempResponse struct {
 		XMLName struct{} `xml:"methodResponse" json:"-"`
-		Data    *Value   `xml:"params>param>value" json:"data,omitempty"`
+		Data    Value    `xml:"params>param>value" json:"data,omitempty"`
 		Error   *Error   `xml:"fault>value" json:"error,omitempty"`
 	}
 	tempValue := &TempResponse{}
@@ -84,20 +86,16 @@ func (r *Response) UnmarshalXML(u *xml.Decoder, start xml.StartElement) (err err
 		return err
 	}
 
-	if tempValue.Data != nil && tempValue.Data.Value != nil {
+	if tempValue.Data.Value != nil {
 		r.Data = tempValue.Data.Value
 	}
 	r.Error = tempValue.Error
 	return
 }
 
-type XmlRpcTypes interface {
-	Value | Struct | Array | map[string]any | []any
-}
-
 // Value xml-rpc value
 type Value struct {
-	Value any `xml:"value" json:"value,omitempty"`
+	Value any `json:"value,omitempty" xml:"value,omitempty"`
 }
 
 func (r *Value) UnmarshalJSON(data []byte) error {
@@ -120,6 +118,7 @@ func (r *Value) MarshalXML(u *xml.Encoder, start xml.StartElement) (err error) {
 
 	structType, structValue, err := MarshalType(r.Value)
 	if err != nil {
+
 		return fmt.Errorf("MarshalXML error: %w", err)
 	}
 	data := Temp{}
@@ -128,7 +127,7 @@ func (r *Value) MarshalXML(u *xml.Encoder, start xml.StartElement) (err error) {
 		data.Value.Value = structValue
 	}
 
-	err = u.Encode(data)
+	err = u.EncodeElement(data, start)
 
 	return
 }
@@ -159,9 +158,10 @@ func (r Struct) MarshalXML(u *xml.Encoder, start xml.StartElement) (err error) {
 		Name  string `xml:"name"`
 		Value Value  `xml:"value"`
 	}
-	var data []*TempStructMember
+	var data []TempStructMember
+
 	for key, value := range r {
-		tm := &TempStructMember{
+		tm := TempStructMember{
 			Name: key,
 		}
 		if value != nil {
@@ -183,7 +183,7 @@ func (r Struct) UnmarshalXML(u *xml.Decoder, start xml.StartElement) (err error)
 	}
 
 	type Temp struct {
-		Members []*TempStructMember `xml:"member"`
+		Members []TempStructMember `xml:"member"`
 	}
 
 	var temp Temp
@@ -192,9 +192,12 @@ func (r Struct) UnmarshalXML(u *xml.Decoder, start xml.StartElement) (err error)
 	if err != nil {
 		return fmt.Errorf("struct xml decoder error: %w", err)
 	}
-
+	if r == nil {
+		err = fmt.Errorf("struct is nil")
+		return
+	}
 	for _, m := range temp.Members {
-		r[m.Name] = m.Value.Value
+		(r)[m.Name] = m.Value.Value
 	}
 	return nil
 }
@@ -208,14 +211,15 @@ func (r Array) MarshalXML(u *xml.Encoder, start xml.StartElement) (err error) {
 		Values  []*Value `xml:"value"`
 	}
 
-	var data Temp
-	data.Values = make([]*Value, len(r))
-	for i, v := range r {
-		data.Values[i] = &Value{v}
-
+	data := Temp{
+		Values: make([]*Value, len(r)),
 	}
 
-	return u.Encode(data)
+	for i, v := range r {
+		data.Values[i] = &Value{v}
+	}
+
+	return u.Encode(&data)
 
 }
 func (r *Array) UnmarshalXML(u *xml.Decoder, start xml.StartElement) (err error) {
@@ -260,51 +264,59 @@ func UnmarshalType(Type, data string) (res any, err error) {
 		data = fmt.Sprintf("<array>%s</array>", data)
 		err = xml.NewDecoder(strings.NewReader(data)).Decode(re)
 		if err != nil {
-			fmt.Println("parsing array error:", err, strings.NewReader(data))
+			err = fmt.Errorf("parsing array error: %w, %s ", err, data)
 		}
 		res = re
 	case "nil":
 		return nil, nil
-	case "struct":
+	case "struct", "Struct":
 		re := &Struct{}
-		//fmt.Println(">>>>", strings.Replace(data, "\n", "", -1))
 		data = fmt.Sprintf("<string>%s</string>", data)
 		err = xml.NewDecoder(strings.NewReader(data)).Decode(&re)
 		if err != nil {
-			err = fmt.Errorf("parsing struct error: %w", err)
+			err = fmt.Errorf("parsing struct error: %w - %s", err, data)
 		}
 		res = re
 	default:
-		fmt.Printf("type not set type: %s\n", Type)
+		fmt.Printf("uknown type: %s\n", Type)
 	}
 	return
 }
 
 func MarshalType(d any) (t string, v any, err error) {
+
 	t = fmt.Sprintf("%T", d)
 	v = fmt.Sprintf("%v", d)
+	if isNil(d) {
+		t = "nil"
+		return
+	}
 	switch val := d.(type) {
-	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+	case int, *int, int8, *int8, int16, *int16, int32, *int32, int64, *int64, uint,
+		*uint, uint8, *uint8, uint16, *uint16, uint32, *uint32, uint64, *uint64:
 		t = "int"
-	case float64, float32:
+	case float64, *float64, float32, *float32:
 		t = "double"
-	case bool:
+	case bool, *bool:
 		t = "boolean"
 	case time.Time:
+		t = "dateTime.iso8601"
+		v = val.Format(xmlRpcTime)
+	case *time.Time:
 		t = "dateTime.iso8601"
 		v = val.Format(xmlRpcTime)
 	case []byte:
 		t = "base64"
 		v = base64.StdEncoding.EncodeToString(val)
-	case string:
+	case string, *string:
 		t = "string"
-	case Array:
+	case Array, *Array:
 		t = "array"
 		v = val
 	case []any:
 		t = "array"
 		v = Array(val)
-	case Struct:
+	case Struct, *Struct:
 		t = "struct"
 		v = val
 	case map[string]any:
@@ -314,12 +326,24 @@ func MarshalType(d any) (t string, v any, err error) {
 		t = "nil"
 		v = val
 	}
+
 	return
+}
+func isNil(i any) bool {
+	if i == nil {
+		return true
+	}
+	v := reflect.ValueOf(i)
+	return v.Kind() == reflect.Ptr && v.IsNil()
 }
 
 type Error struct {
 	FaultCode   int    `xml:"faultCode"`
 	FaultString string `xml:"faultString"`
+}
+
+func (r *Error) Error() string {
+	return fmt.Sprintf("faultCode: %d, faultString: %s", r.FaultCode, r.FaultString)
 }
 
 func (r *Error) UnmarshalXML(u *xml.Decoder, start xml.StartElement) (err error) {
@@ -359,14 +383,69 @@ func (r *Error) UnmarshalXML(u *xml.Decoder, start xml.StartElement) (err error)
 	return
 }
 
-func (r Error) MarshalXML(u *xml.Encoder, start xml.StartElement) (err error) {
-	temp := Struct{
+func (r *Error) MarshalXML(u *xml.Encoder, start xml.StartElement) (err error) {
+	temp := Value{&Struct{
 		"faultCode":   r.FaultCode,
 		"faultString": r.FaultString,
-	}
+	}}
 	err = u.EncodeElement(&temp, start)
 	if err != nil {
 		return fmt.Errorf("encoding error-struct error: %w", err)
 	}
+	return
+}
+
+type XmlRpcTypes interface {
+	Value | Struct | Array | map[string]any | []any | *Value | *Struct | *Array
+}
+
+type Encoder struct {
+	*xml.Encoder
+}
+
+func NewEncoder(w io.Writer) *Encoder {
+	return &Encoder{xml.NewEncoder(w)}
+}
+func (e *Encoder) Encode() error {
+	return fmt.Errorf("not implemented use EncodeRequest or EncodeResponse")
+}
+func (e *Encoder) EncodeRequest(method string, data any) error {
+	req := &Request{
+		MethodName: method,
+		Data:       data,
+	}
+	return e.Encoder.Encode(req)
+}
+func (e *Encoder) EncodeResponse(data any, err *Error) error {
+
+	req := &Response{
+		Data:  data,
+		Error: err,
+	}
+	return e.Encoder.Encode(req)
+}
+
+type Decoder struct {
+	*xml.Decoder
+}
+
+func NewDecoder(r io.Reader) *Decoder {
+	return &Decoder{xml.NewDecoder(r)}
+}
+
+func (d *Decoder) Decode() (err error) {
+	err = fmt.Errorf("not implemented use DecodeRequest or DecodeResponse")
+	return
+}
+
+func (d *Decoder) DecodeRequest() (res *Request, err error) {
+	res = &Request{}
+	err = d.Decoder.Decode(res)
+	return
+}
+
+func (d *Decoder) DecodeResponse() (res *Response, err error) {
+	res = &Response{}
+	err = d.Decoder.Decode(res)
 	return
 }
