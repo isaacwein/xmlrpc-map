@@ -91,16 +91,20 @@ func (r *Response) UnmarshalXML(u *xml.Decoder, start xml.StartElement) (err err
 	return
 }
 
+type XmlRpcTypes interface {
+	Value | Struct | Array | map[string]any | []any
+}
+
 // Value xml-rpc value
 type Value struct {
 	Value any `xml:"value" json:"value,omitempty"`
 }
 
-func (r Value) UnmarshalJSON(data []byte) error {
+func (r *Value) UnmarshalJSON(data []byte) error {
 	return json.Unmarshal(data, &r.Value)
 }
 
-func (r Value) MarshalJSON() ([]byte, error) {
+func (r *Value) MarshalJSON() ([]byte, error) {
 	return json.Marshal(r.Value)
 }
 
