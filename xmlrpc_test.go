@@ -34,7 +34,7 @@ func TestReqDecoder(t *testing.T) {
 }
 
 func TestReqEncoder(t *testing.T) {
-	resData := Struct{
+	reqData := Struct{
 		"i_account":  3,
 		"i_account2": 36,
 		"nil-value":  nil,
@@ -48,7 +48,7 @@ func TestReqEncoder(t *testing.T) {
 
 	enc := NewEncoder(buf)
 	enc.Indent("\t", "	")
-	err := enc.EncodeRequest("some-method-name", &resData)
+	err := enc.EncodeRequest("some-method-name", "some-string-param", 555, &reqData, &reqData)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,7 @@ func TestRespEncoder(t *testing.T) {
 	buf := &bytes.Buffer{}
 	enc := NewEncoder(buf)
 	//enc.Indent("\t", "	")
-	err := enc.EncodeResponse(resData, nil)
+	err := enc.EncodeResponse(resData)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +99,7 @@ func TestRespErrorEncoder(t *testing.T) {
 	buf := &bytes.Buffer{}
 	enc := NewEncoder(buf)
 	enc.Indent("\t", "	")
-	err := enc.EncodeResponse(nil, &resData)
+	err := enc.EncodeError(&resData)
 	if err != nil {
 		t.Fatal(err)
 	}

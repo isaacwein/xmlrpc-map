@@ -15,19 +15,25 @@ import (
 type Request struct {
 	XMLName    struct{} `xml:"methodCall" json:"-"`
 	MethodName string   `xml:"methodName" json:"method_name"`
-	Data       any      `xml:"params>param>value" json:"data,omitempty"`
+	Data       []any    `xml:"params>param>value" json:"data,omitempty"`
 }
 
 func (r *Request) MarshalXML(u *xml.Encoder, start xml.StartElement) (err error) {
 	type TempRequest struct {
 		XMLName    struct{} `xml:"methodCall" json:"-"`
 		MethodName string   `xml:"methodName" json:"method_name"`
-		Data       *Value   `xml:"params>param>value" json:"data,omitempty"`
+		Data       []Value  `xml:"params>param>value" json:"data,omitempty"`
 	}
 
 	tempValue := &TempRequest{
 		MethodName: r.MethodName,
-		Data:       &Value{Value: r.Data},
+	}
+
+	if r.Data != nil {
+		tempValue.Data = make([]Value, len(r.Data))
+		for i, datum := range r.Data {
+			tempValue.Data[i] = Value{Value: datum}
+		}
 	}
 	return u.Encode(tempValue)
 }
@@ -35,7 +41,7 @@ func (r *Request) UnmarshalXML(u *xml.Decoder, start xml.StartElement) (err erro
 	type TempRequest struct {
 		XMLName    struct{} `xml:"methodCall" json:"-"`
 		MethodName string   `xml:"methodName" json:"method_name"`
-		Data       Value    `xml:"params>param>value" json:"data,omitempty"`
+		Data       []Value  `xml:"params>param>value" json:"data,omitempty"`
 		Error      *Error   `xml:"fault>value" json:"error,omitempty"`
 	}
 	tempValue := &TempRequest{}
@@ -44,8 +50,12 @@ func (r *Request) UnmarshalXML(u *xml.Decoder, start xml.StartElement) (err erro
 		return err
 	}
 	r.MethodName = tempValue.MethodName
-	if tempValue.Data.Value != nil {
-		r.Data = tempValue.Data.Value
+
+	if tempValue.Data != nil {
+		r.Data = make([]any, len(tempValue.Data))
+		for i, datum := range tempValue.Data {
+			r.Data[i] = datum.Value
+		}
 	}
 
 	return
@@ -53,14 +63,14 @@ func (r *Request) UnmarshalXML(u *xml.Decoder, start xml.StartElement) (err erro
 
 type Response struct {
 	XMLName struct{} `xml:"methodResponse" json:"-"`
-	Data    any      `xml:"params>param>value" json:"data,omitempty"`
+	Data    []any    `xml:"params>param>value" json:"data,omitempty"`
 	Error   *Error   `xml:"fault>value" json:"error,omitempty"`
 }
 
 func (r *Response) MarshalXML(u *xml.Encoder, start xml.StartElement) (err error) {
 	type TempResponse struct {
 		XMLName struct{} `xml:"methodResponse" json:"-"`
-		Data    *Value   `xml:"params>param>value" json:"data,omitempty"`
+		Data    []Value  `xml:"params>param" json:"data,omitempty"`
 		Error   *Error   `xml:"fault>value" json:"error,omitempty"`
 	}
 
@@ -68,8 +78,11 @@ func (r *Response) MarshalXML(u *xml.Encoder, start xml.StartElement) (err error
 	if r.Error != nil {
 		tempValue.Error = r.Error
 	}
-	if r.Data != nil {
-		tempValue.Data = &Value{Value: r.Data}
+	if r.Data == nil {
+		tempValue.Data = make([]Value, len(r.Data))
+		for i, datum := range r.Data {
+			tempValue.Data[i] = Value{Value: datum}
+		}
 	}
 
 	return u.Encode(tempValue)
@@ -77,18 +90,22 @@ func (r *Response) MarshalXML(u *xml.Encoder, start xml.StartElement) (err error
 func (r *Response) UnmarshalXML(u *xml.Decoder, start xml.StartElement) (err error) {
 	type TempResponse struct {
 		XMLName struct{} `xml:"methodResponse" json:"-"`
-		Data    Value    `xml:"params>param>value" json:"data,omitempty"`
+		Data    []Value  `xml:"params>param" json:"data,omitempty"`
 		Error   *Error   `xml:"fault>value" json:"error,omitempty"`
 	}
+
 	tempValue := &TempResponse{}
 	err = u.DecodeElement(tempValue, &start)
 	if err != nil {
 		return err
 	}
-
-	if tempValue.Data.Value != nil {
-		r.Data = tempValue.Data.Value
+	if tempValue.Data != nil {
+		r.Data = make([]any, len(tempValue.Data))
+		for i, datum := range tempValue.Data {
+			r.Data[i] = datum.Value
+		}
 	}
+
 	r.Error = tempValue.Error
 	return
 }
@@ -407,20 +424,34 @@ func NewEncoder(w io.Writer) *Encoder {
 	return &Encoder{xml.NewEncoder(w)}
 }
 func (e *Encoder) Encode() error {
-	return fmt.Errorf("not implemented use EncodeRequest or EncodeResponse")
+	return fmt.Errorf("not implemented use EncodeRequest or EncodeResponseOrError")
 }
-func (e *Encoder) EncodeRequest(method string, data any) error {
+func (e *Encoder) EncodeRequest(method string, data ...any) error {
 	req := &Request{
 		MethodName: method,
 		Data:       data,
 	}
 	return e.Encoder.Encode(req)
 }
-func (e *Encoder) EncodeResponse(data any, err *Error) error {
 
+func (e *Encoder) EncodeResponseOrError(data []any, err *Error) error {
 	req := &Response{
 		Data:  data,
 		Error: err,
+	}
+	return e.Encoder.Encode(req)
+}
+
+func (e *Encoder) EncodeError(err *Error) error {
+	req := &Response{
+		Error: err,
+	}
+	return e.Encoder.Encode(req)
+}
+
+func (e *Encoder) EncodeResponse(data ...any) error {
+	req := &Response{
+		Data: data,
 	}
 	return e.Encoder.Encode(req)
 }
